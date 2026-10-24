@@ -99,3 +99,32 @@ def test_missing_ffmpeg_error_points_to_doctor():
     with pytest.raises(SystemExit) as e:
         st.fail(FileNotFoundError(2, "No such file or directory", "ffprobe"))
     assert "studio.py doctor" in str(e.value)
+
+
+def test_bad_time_is_a_clear_error():
+    with pytest.raises(ValueError, match="bad time"):
+        P.parse_ts("abc")
+    assert P.parse_ts("1:30") == 90
+
+
+def test_bad_arguments_are_json(capsys, monkeypatch):
+    monkeypatch.setattr(st.sys, "argv", ["studio.py", "set", "x", "--comp", "abc"])
+    with pytest.raises(SystemExit) as e:
+        st.main()
+    import json
+    assert "error" in json.loads(str(e.value))
+
+
+def test_init_tracks_from_ingest_and_relative(tmp_path):
+    ep = tmp_path / "ep"
+    (ep / "work").mkdir(parents=True)
+    for n in ("h1", "h2", "h3"):
+        (ep / "work" / f"{n}.wav").write_bytes(b"")
+    ing = {"reference": "h2", "tracks": [{"host": h, "work": str(ep / "work" / f"{h}.wav")} for h in ("h1", "h2", "h3")]}
+    sh = {"hosts": [{"id": "h1"}, {"id": "h2"}, {"id": "h3"}]}
+    assert [Path(p).stem for p in st.init_tracks(ep, None, None, sh, ing)] == ["h2", "h1"]
+    assert Path(st.init_tracks(ep, "work/h3.wav", "work/h1.wav", sh, ing)[0]).name == "h3.wav"
+    with pytest.raises(SystemExit):
+        st.init_tracks(ep, "nope.wav", "work/h1.wav", sh, ing)
+    with pytest.raises(SystemExit):
+        st.init_tracks(ep, None, None, sh, None)

@@ -24,10 +24,10 @@ change and builds the final MP3 with chapters.
 
 ```bash
 git clone https://github.com/echeetah/podcast-studio && cd podcast-studio
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e core
-python studio/studio.py doctor          # checks Python, ffmpeg and packages; prints how to fix what is missing
-python studio/studio.py credentials     # creates ~/.config/podcast-studio/credentials (chmod 600)
+python3 -m venv .venv
+.venv/bin/pip install -e core
+.venv/bin/python studio/studio.py doctor          # checks Python, ffmpeg and packages; prints how to fix what is missing
+.venv/bin/python studio/studio.py credentials   # creates ~/.config/podcast-studio/credentials (chmod 600)
 ```
 
 Or just open the folder in your agent and say *"Install this by the README"*: it runs `doctor` and offers to
@@ -36,7 +36,8 @@ install anything missing (such as ffmpeg) after asking you.
 1. Open `~/.config/podcast-studio/credentials` and paste your AssemblyAI key after `ASSEMBLYAI_API_KEY=`.
    Do not paste the key into the agent chat.
 2. Connect the skill to your agent — see [studio/adapters](studio/adapters/README.md).
-   For Claude Code: `mkdir -p .claude/skills && ln -s ../../studio .claude/skills/podcast-studio`.
+   For Claude Code: `mkdir -p .claude/skills && ln -s ../../studio .claude/skills/podcast-studio`
+   (Windows: `xcopy /E /I studio .claude\skills\podcast-studio` — re-copy after updates).
 3. Start the agent in this folder and say: *"Set up my podcast show"*. It asks about hosts, mics and jingles
    and writes `show.json`.
 4. Say *"Start episode 1"*, put the hosts' files into `episodes/1/tracks/` and let the agent take it from there.
@@ -55,7 +56,9 @@ show.json (once per show)
      render     → out/       MP3 with ID3 chapters, chapters.txt, transcript.txt/.srt
 ```
 
-Every command prints JSON, so the agent always knows the state. `python studio/studio.py --help` lists them all.
+Every command prints JSON, so the agent always knows the state. `.venv/bin/python studio/studio.py --help` lists them all. On Windows use `.venv\Scripts\python`.
+
+`plan` sends the transcript text to an LLM (AssemblyAI LLM Gateway, same key, small extra cost) to find the start, end and chapters.
 
 ## AssemblyAI or Whisper?
 

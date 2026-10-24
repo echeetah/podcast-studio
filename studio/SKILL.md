@@ -9,10 +9,11 @@ You are the editor. The user speaks in plain words; you turn that into `studio.p
 
 **Always talk to the user in their language; files and commands stay in English.**
 
-Tool: `python studio/studio.py …` (Python 3.10+, ffmpeg/ffprobe in PATH, `pip install -e core`).
+Tool: `.venv/bin/python studio/studio.py …` (Windows: `.venv\Scripts\python studio\studio.py …`) — always the repository's own venv, never a bare `python` (it may not exist or may be another Python).
+Run every command from the repository root. Setup: `python3 -m venv .venv && .venv/bin/pip install -e core`; ffmpeg/ffprobe in PATH.
 Every command prints JSON (logs go to stderr). All state lives in files in the episode folder; stages are cached.
 Times are seconds or `mm:ss` / `hh:mm:ss` on the timeline of track A (the reference track).
-`python studio/studio.py --help` lists all commands.
+`studio.py --help` lists all commands. Errors are JSON too: `{"error": …}` on stderr with a non-zero exit.
 
 ## Before anything else: `doctor`
 
@@ -43,11 +44,12 @@ Ask the user to paste the key into that file themselves. Never ask for the key i
 1. "Starting episode N" → `episode-new N --show SHOW_DIR` → tell the user to put the tracks into `tracks/`.
 2. `ingest EPISODE_DIR` → show a table: file → host, format, length, warnings. `guessed: true` — ask whose file it is.
    The reference track is the first host's; if ingest picked another one (it is longer), tell the user.
-3. `init EPISODE_DIR work/h1.wav work/h2.wav` — takes the number, names and mic presets from the show.
+3. `init EPISODE_DIR` — takes the two tracks from `ingest.json` (reference first), the number, names and mic presets from the show. Explicit tracks: `init EPISODE_DIR A B` (paths relative to the episode folder).
    *(Today the build runs on two tracks; 3–5 tracks are ingested but not built yet.)*
 4. `sync EPISODE_DIR` → report `mode`, offset, drift, `confidence`. A sync chirp in the audio is found by itself
    (`mode: signal`, reason in `signal.trust`). Low confidence → offer `preview --at` in a dialogue spot and a manual shift.
-5. `transcribe` → `plan` (start, end, chapters). In chat give a short summary; exact text only on request, in chunks
+5. `transcribe` → `plan` (start, end, chapters). Note: `plan` sends the transcript text to an LLM (AssemblyAI LLM Gateway with the same key; small extra cost). Tell the user once.
+   In chat give a short summary; exact text only on request, in chunks
    (`text --from/--to`).
 6. Edits — see the table. After each edit, `preview --at T --len 20` around the change and let the user listen.
 7. Only after an explicit "ok" → `render EPISODE_DIR`. Result in `out/`. Write 3 title options and a description yourself.
@@ -60,7 +62,7 @@ Ask the user to paste the key into that file themselves. Never ask for the key i
 |---|---|
 | "start from the words …" | `find DIR "phrase"` (every hit with ¶N.M and context; the last word matches by prefix) → `set DIR --start T` |
 | "the second track lags" | `set DIR --b-delay 80` (ms, > 0 — B later), then `preview --at` in a dialogue spot |
-| "cut the part about …" | `text DIR --from … --to …` → boundaries by words/sentences → `cut DIR FROM TO --note …` → `preview --at` at the join; undo — `uncut DIR N` |
+| "cut the part about …" | `text DIR --from … --to …` → boundaries by words/sentences → `cut DIR FROM TO --note …` → `preview --at` at the join; undo — `uncut DIR N` (N is the 0-based index in `status`/`plan.json` cuts) |
 | "duller / brighter", "compress more" | `set DIR --eq on/off`, `--comp 3`; another mic — `--profile-a/--profile-b NAME` (show presets or `auto`) |
 | "it is noisy" | `set DIR --denoise 20` (0 — off) |
 

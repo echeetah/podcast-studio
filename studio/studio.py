@@ -75,6 +75,12 @@ def log_edit(work, **e):
     return ed
 
 
+class JsonArgParser(argparse.ArgumentParser):
+    """Wrong arguments → JSON error (with usage) instead of argparse text."""
+    def error(self, message):
+        sys.exit(json.dumps({"error": message, "usage": self.format_usage().strip()}, ensure_ascii=False))
+
+
 def fail(e):
     if isinstance(e, FileNotFoundError) and Path(str(e.filename or "")).name in ("ffmpeg", "ffprobe"):
         e = f"{e.filename} not found in PATH. Run: studio.py doctor"
@@ -91,7 +97,7 @@ def cmd_credentials(a):
 def install_hint(what):
     """How to install ffmpeg or the Python dependencies on this system."""
     if what != "ffmpeg":
-        return f"{sys.executable} -m pip install -e core   (from the repository root; pulls numpy and mutagen)"
+        return ("python3 -m venv .venv && .venv/bin/pip install -e core   (from the repository root; Windows: py -m venv .venv && .venv\\Scripts\\pip install -e core) — then run studio.py with .venv's python")
     if sys.platform == "darwin":
         return ("brew install ffmpeg" if shutil.which("brew")
                 else "install Homebrew (https://brew.sh), then: brew install ffmpeg")
@@ -197,15 +203,58 @@ def apply_presets(w):
     js["mic_profiles"] = {**(js.get("mic_profiles") or {}), **{n: sh["presets"][n].get("eq", "") for n in names}}
     js["track_profile"] = names
     js["language"] = sh.get("language") or js.get("language") or "en"
+    root = show.find_show(w)
+    assets = sh.get("assets") or {}
+    adir = Path(root, assets["dir"]).resolve() if assets.get("dir") else None
+    if adir:
+        js["assets"] = str(adir)
+    files = {k: str(Path(adir or root, assets[k]).resolve()) for k in ("intro", "outro", "cover") if assets.get(k)}
+    if files:
+        js["asset_files"] = files
+    if sh.get("spelling"):
+        js["spelling"] = sh["spelling"]
+    if sh.get("name"):
+        js["podcast_name"] = sh["name"]
     P.jsave(w / "settings.json", js)
     return names
 
 
+def init_tracks(work, a_, b_, sh, ing):
+    """Tracks A and B: given paths (relative to the episode folder first, then the cwd) or, by default,
+    the working WAVs from ingest.json — the reference track first, then the next host in show order."""
+    if a_ and b_:
+        found = []
+        for t in (a_, b_):
+            p = next((c for c in (Path(work) / t, Path(t)) if c.exists()), None)
+            if not p:
+                fail(f"track not found: {t} (looked in {Path(work).resolve()} and the current folder)")
+            found.append(str(p.resolve()))
+        return found
+    if a_ or b_:
+        fail("give both tracks A and B, or none (then they come from ingest.json)")
+    if not ing:
+        fail("no ingest.json — run `ingest EPISODE_DIR` first, or pass the two track paths")
+    by = {t["host"]: t["work"] for t in ing["tracks"] if t.get("host")}
+    order = [ing["reference"]] + [h["id"] for h in (sh or {}).get("hosts", []) if h["id"] != ing["reference"]]
+    ids = [h for h in order if h in by][:2]
+    if len(ids) < 2:
+        fail("ingest.json has fewer than two matched hosts — pass the two track paths")
+    if len(by) > 2:
+        log_note = f"building from 2 of {len(by)} tracks ({', '.join(ids)}): 3–5-track builds are not supported yet"
+        print(log_note, file=sys.stderr)
+    return [by[i] for i in ids]
+
+
 def cmd_init(a):
-    sh, _, ep = episode_info(a.work)
+    sh, ing, ep = episode_info(a.work)
     n = a.n if a.n is not None else (ep or {}).get("n")
     names = a.names or ([h["name"] for h in sh["hosts"][:2]] if sh else ["Host 1", "Host 2"])
-    w = P.new_job(a.work, [a.a, a.b], names, a.title or (ep or {}).get("title", ""), n)
+    tracks = init_tracks(a.work, a.a, a.b, sh, ing)
+    if sh and not a.names and ing:   # names follow the chosen tracks
+        hn = {h["id"]: h["name"] for h in sh["hosts"]}
+        bywork = {t["work"]: t["host"] for t in ing["tracks"]}
+        names = [hn.get(bywork.get(t), names[i]) for i, t in enumerate(tracks)]
+    w = P.new_job(a.work, tracks, names, a.title or (ep or {}).get("title", ""), n)
     out({"work": str(w), "n": n, "names": names, "presets": apply_presets(w), "next": "sync"})
 
 
@@ -350,6 +399,8 @@ def cmd_set(a):
         js["eq"] = changed["eq"] = a.eq == "on"
     if a.comp is not None:
         js["comp_ratio"] = changed["comp_ratio"] = a.comp
+    if a.denoise is not None and not 0 <= a.denoise <= 97:
+        fail("--denoise must be 0 (off) to 97")
     if a.denoise is not None:
         js["denoise"], js["denoise_nr"] = a.denoise > 0, a.denoise
         changed["denoise_nr"] = a.denoise
@@ -414,7 +465,7 @@ def cmd_render(a):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = JsonArgParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("doctor"); p.set_defaults(fn=cmd_doctor)
     p = sub.add_parser("credentials"); p.set_defaults(fn=cmd_credentials)
@@ -426,7 +477,7 @@ def main():
     p = sub.add_parser("episode-new"); p.add_argument("n", type=int); p.add_argument("--show", default=".")
     p.add_argument("--title", default=""); p.set_defaults(fn=cmd_episode_new)
     p = sub.add_parser("ingest"); p.add_argument("episode"); p.set_defaults(fn=cmd_ingest)
-    p = sub.add_parser("init"); p.add_argument("work"); p.add_argument("a"); p.add_argument("b")
+    p = sub.add_parser("init"); p.add_argument("work"); p.add_argument("a", nargs="?"); p.add_argument("b", nargs="?")
     p.add_argument("--names", nargs=2, help="default: the first two hosts from show.json")
     p.add_argument("--title", default=""); p.add_argument("--n", type=int, help="episode number (otherwise from episode.json)")
     p.set_defaults(fn=cmd_init)
@@ -457,10 +508,16 @@ def main():
         fail(f"missing dependency: {IMPORT_ERROR}. Run: studio.py doctor")
     try:
         a.fn(a)
-    except FileNotFoundError as e:
-        if Path(str(e.filename or "")).name in ("ffmpeg", "ffprobe"):
-            fail(e)
+    except SystemExit:
         raise
+    except Exception as e:  # noqa: BLE001  — the agent always gets JSON, never a traceback
+        if os.environ.get("STUDIO_DEBUG"):
+            raise
+        if isinstance(e, subprocess.CalledProcessError):
+            err = (e.stderr or b"")
+            err = err.decode(errors="replace") if isinstance(err, bytes) else str(err)
+            e = f"{Path(str(e.cmd[0])).name} failed: {err.strip()[-400:] or e}"
+        fail(e)
 
 
 if __name__ == "__main__":

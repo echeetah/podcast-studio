@@ -84,7 +84,7 @@ DEFAULTS = {
 
 
 def _log(msg):
-    print(time.strftime("%H:%M:%S"), msg, flush=True)
+    print(time.strftime("%H:%M:%S"), msg, file=sys.stderr, flush=True)   # stdout stays clean for JSON
 
 
 log = _log
@@ -145,7 +145,10 @@ def fmt_ts(t, force_h=False):
 def parse_ts(s):
     """"1:02:13", "62:13", "95.5", "-0:30", "105s", "1:45,5" → seconds (sign supported).
     LLMs sometimes return time as a string with units — the extra is dropped."""
+    orig = s
     s = re.sub(r"[^\d:.,+-]", "", str(s).strip()).replace(",", ".")
+    if not re.search(r"\d", s):
+        raise ValueError(f"bad time {orig!r}: use seconds or mm:ss / hh:mm:ss")
     if re.fullmatch(r"-?\d+(\.\d+)?", s):
         return float(s)
     sign = -1 if s.startswith("-") else 1
@@ -990,7 +993,10 @@ def loudness(path, extra="", on_frac=None, seek=None):
 
 
 def find_asset(cfg, name):
-    """Intro/outro/cover file in assets: intro.*, outro.*, cover.* (first matching extension)."""
+    """Intro/outro/cover file: an explicit one from cfg["asset_files"], else intro.*, outro.*, cover.* in assets."""
+    f = (cfg.get("asset_files") or {}).get(name)
+    if f and Path(f).exists():
+        return Path(f)
     if not cfg.get("assets"):
         return None
     d = Path(cfg["assets"])

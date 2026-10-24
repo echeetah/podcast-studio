@@ -79,7 +79,7 @@ def cred_init():
     created = not p.exists()
     if created:
         p.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)   # 0o600 is ignored on Windows
         with os.fdopen(fd, "w") as f:
             f.write(CRED_TEMPLATE)
     return {"path": str(p), "created": created, **cred_status()}
@@ -106,7 +106,8 @@ def cred_status():
     p = cred_path()
     mode = stat.S_IMODE(p.stat().st_mode) if p.exists() else None
     vals = cred_load()
-    return {"exists": p.exists(), "private": mode is not None and not mode & 0o077,
+    private = mode is not None and (os.name == "nt" or not mode & 0o077)   # Windows: no POSIX modes, ACLs instead
+    return {"exists": p.exists(), "private": private,
             "keys": {k: bool(vals.get(k)) for k in CRED_KEYS}}
 
 

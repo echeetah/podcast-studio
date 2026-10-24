@@ -56,10 +56,11 @@ def probe(path):
             "start_time": num(s.get("start_time")) or 0.0, "initial_padding": num(s.get("initial_padding"), int) or 0}
 
 
-def decode(path, sr=ASR, channels=None):
-    """File → float32 [channels, samples] (for analysis)."""
+def decode(path, sr=ASR, channels=None, start=None, dur=None):
+    """File → float32 [channels, samples] (for analysis); start/dur (s) — only that window."""
     ch = ["-ac", str(channels)] if channels else []
-    r = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-map", "0:a:0", *ch,
+    win = (["-ss", f"{start:.3f}"] if start else []) + (["-t", f"{dur:.3f}"] if dur else [])
+    r = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", *win, "-i", str(path), "-map", "0:a:0", *ch,
                         "-ar", str(sr), "-f", "f32le", "-"], capture_output=True, check=True)
     n = channels or probe(path)["channels"] or 1
     x = np.frombuffer(r.stdout, np.float32)
@@ -71,8 +72,12 @@ def mono_plan(path, info):
     n = info["channels"] or 1
     if n == 1:
         return "anull", ""
-    x = decode(path, ASR, n)
-    rms = np.sqrt((x.astype(np.float64) ** 2).mean(axis=1)) + 1e-12
+    d = info.get("duration") or 0
+    if d > 240:   # three 60-s windows are enough to tell the channels apart — not the whole hour in memory
+        x = np.concatenate([decode(path, ASR, n, d * f - 30, 60) for f in (0.2, 0.5, 0.8)], axis=1)
+    else:
+        x = decode(path, ASR, n)
+    rms = np.sqrt((x ** 2).mean(axis=1, dtype=np.float64)) + 1e-12
     if n == 2:
         c = float(np.corrcoef(x[0], x[1])[0, 1]) if rms.min() > 1e-6 else 0.0
         if c > 0.9 and rms.max() / rms.min() < 2:
@@ -115,7 +120,7 @@ def normalize(src, dst):
     bare = (info["codec"] == "mp3" and not info["start_time"]) or (info["codec"] == "aac" and "aac" in (info["container"] or ""))
     if bare and not info["initial_padding"]:
         warn.append("no codec padding tags — the start may be shifted by ~25–50 ms (sync will correct it)")
-    return {"src": str(src), "work": str(dst), "source": info, "duration": round(probe(dst)["duration"] or 0, 3),
+    return {"src": str(Path(src).resolve()), "work": str(Path(dst).resolve()), "source": info, "duration": round(probe(dst)["duration"] or 0, 3),
             "resampled": info["sample_rate"] != SR, **st, "warnings": warn}
 
 
