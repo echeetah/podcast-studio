@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# your shows, episodes and audio stay local
+show.json
+episodes/
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.aac
+*.ogg
+*.opus
+*.srt
+
+# secrets
+*.env
+.env*
+credentials
+
+# system / editors
+.DS_Store
+.idea/
+.vscode/

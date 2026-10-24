@@ -1,0 +1,8 @@
+---
+description: Podcast editing — show setup, track ingest, sync, transcription, text-based edits, previews, mastering
+globs:
+alwaysApply: false
+---
+
+When the user asks to set up a show, start an episode, sync, transcribe, edit, preview or render a podcast,
+follow @studio/SKILL.md. Always talk to the user in their language; files and commands stay in English.
