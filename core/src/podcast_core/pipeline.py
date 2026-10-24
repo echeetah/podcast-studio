@@ -40,6 +40,7 @@ from pathlib import Path
 import numpy as np
 
 from . import locale_ru
+from .show import jload, jsave  # noqa: F401  (re-exported: the bot calls P.jload / P.jsave)
 
 SR = 48000          # render sample rate
 ASR = 8000          # analysis sample rate
@@ -156,19 +157,6 @@ def parse_ts(s):
     for p in s.lstrip("+-").split(":"):
         v = v * 60 + float(p)
     return sign * v
-
-
-def jload(p, default=None):
-    """JSON file → object; default if the file is missing."""
-    p = Path(p)
-    return json.loads(p.read_text()) if p.exists() else default
-
-
-def jsave(p, obj):
-    """Atomic JSON write (.tmp + rename): state is not corrupted if the process dies mid-write."""
-    tmp = Path(str(p) + ".tmp")
-    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1))
-    tmp.replace(p)
 
 
 APP_DIR = None     # app folder: <APP_DIR>/settings.json and <APP_DIR>/assets (configure)
@@ -1165,7 +1153,7 @@ def to_edit(segs, t):
         pos += b - a - XF
 
 
-def render(work, cfg, progress=lambda *a, **k: None, preview=False):
+def render(work, cfg, progress=lambda *a, **k: None, preview=False, segments=None):
     """Build: full episode (out/) or preview (preview/, intro + first minute only).
 
     Chain per track: align B by sync → trim [start, end] from plan → high-pass <70 Hz →
@@ -1173,6 +1161,7 @@ def render(work, cfg, progress=lambda *a, **k: None, preview=False):
     (common EQ if no track_eq) → compressor → loudness to target_lufs → intro/outro → limiter at 4× rate → MP3.
     Full episode also: chapters (ID3 CHAP/CTOC + chapters.txt/json), transcript txt/srt,
     caption.txt (channel post), description.txt. progress(key, fraction, info) — for a progress indicator.
+    segments — preview only: explicit [(a, b, kind)] instead of the default intro + first minute.
     """
     work = Path(work)
     meta, sync, plan = jload(work / "meta.json"), jload(work / "sync.json"), jload(work / "plan.json")
@@ -1185,7 +1174,10 @@ def render(work, cfg, progress=lambda *a, **k: None, preview=False):
         def progress(key, f=None, info=None):
             a, b = span[key]
             base("preview", min(0.99, a + (f or 0) * (b - a)))
-    segs = preview_segments(work, S, E) if preview else keep_segments(S, E, plan.get("cuts"))
+    if not preview:
+        segs = keep_segments(S, E, plan.get("cuts"))
+    else:
+        segs = segments(S, E) if callable(segments) else (segments or preview_segments(work, S, E))
     D = sum(b - a for a, b, _ in segs) - XF * (len(segs) - 1)
     progress("levels" if preview else "clean", 0.0)
     lv = measure_levels(work, cfg, S, E, (lambda f: progress("levels", f)) if preview else (lambda f: progress("clean", f * 0.3)))

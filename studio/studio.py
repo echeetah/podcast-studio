@@ -457,11 +457,12 @@ def cmd_render(a):
         need(w, f)
     cfg = P.load_cfg(w)
     prog = lambda k, f=None, info=None: print(f"[{k}] {f or 0:.0%} {info or ''}", file=sys.stderr)
+    segments = None
     if a.cmd == "preview" and a.at is not None:
         at, ln = T(a.at), a.len
         cuts = P.jload(w / "plan.json").get("cuts")
-        P.preview_segments = lambda work, S, E, length=60: preview_window(at, ln, S, E, cuts)
-    out(P.render(w, cfg, prog, preview=a.cmd == "preview"))
+        segments = lambda S, E: preview_window(at, ln, S, E, cuts)   # S, E are known only inside render
+    out(P.render(w, cfg, prog, preview=a.cmd == "preview", segments=segments))
 
 
 def main():

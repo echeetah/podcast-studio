@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "podcast-core"
-version = "0.1.2"
+version = "0.1.3"
 description = "Build a podcast from the hosts' tracks: ingest, sync, audio processing, rendering"
 requires-python = ">=3.10"
 license = "MIT"

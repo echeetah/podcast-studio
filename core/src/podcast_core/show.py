@@ -53,15 +53,14 @@ LOSSY = {"aac", "mp3", "opus", "vorbis", "amr_nb", "amr_wb"}
 
 
 def jload(p, default=None):
-    try:
-        return json.loads(Path(p).read_text())
-    except (FileNotFoundError, json.JSONDecodeError):
-        return default
+    """JSON file → object; default if the file is missing (a corrupt file raises — better than silently losing state)."""
+    p = Path(p)
+    return json.loads(p.read_text()) if p.exists() else default
 
 
 def jsave(p, obj):
-    p = Path(p)
-    tmp = p.with_suffix(p.suffix + ".tmp")
+    """Atomic JSON write (.tmp + rename): state is not corrupted if the process dies mid-write."""
+    tmp = Path(str(p) + ".tmp")
     tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1))
     tmp.replace(p)
 
