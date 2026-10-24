@@ -73,7 +73,7 @@ whether it is set.
 - `core/` — the `podcast-core` Python package: ingest, sync (incl. sync-chirp search), audio processing, rendering.
 - `studio/` — the agent CLI (`studio.py`), the skill (`SKILL.md`) and agent adapters.
 
-Need more accurate sync? — <link to the companion sync-signal bot repository>
+Need more accurate sync? — see [podcast-studio-bot](https://github.com/echeetah/podcast-studio-bot): a Telegram mini app that plays a sync chirp on every host's device at the same moment.
 
 ## License
 
