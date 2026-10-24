@@ -74,6 +74,7 @@ whether it is set.
 
 ## Layout
 
+- [README.ru.md](README.ru.md) — a detailed guide in Russian.
 - `core/` — the `podcast-core` Python package: ingest, sync (incl. sync-chirp search), audio processing, rendering.
 - `studio/` — the agent CLI (`studio.py`), the skill (`SKILL.md`) and agent adapters.
 
