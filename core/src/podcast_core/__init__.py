@@ -4,4 +4,4 @@ sync (including sync-signal search), audio processing, transcription and renderi
 Self-contained: the package can be moved to another repository as is.
 External programs: ffmpeg and ffprobe in PATH.
 """
-__version__ = "0.1.0"
+__version__ = "0.1.1"

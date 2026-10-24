@@ -67,3 +67,35 @@ def test_presets_from_show(tmp_path):
     assert show.preset_for(sh, "h2", "aac") == "iPhone compressed"
     assert show.preset_for(sh, "h2", "alac") == "iPhone"
     assert show.preset_for(sh, "h9") == "default"
+
+
+def run_doctor(capsys):
+    st.cmd_doctor(None)
+    import json
+    r = json.loads(capsys.readouterr().out)
+    return r, {c["name"]: c for c in r["checks"]}
+
+
+def test_doctor_reports_missing_ffmpeg_with_fix(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("PODCAST_STUDIO_CREDENTIALS", str(tmp_path / "credentials"))
+    real_which = st.shutil.which
+    monkeypatch.setattr(st.shutil, "which", lambda x: None if x in ("ffmpeg", "ffprobe") else real_which(x))
+    r, c = run_doctor(capsys)
+    assert r["ok"] is False
+    assert c["ffmpeg"]["ok"] is False and "ffmpeg" in c["ffmpeg"]["fix"]
+    assert c["AssemblyAI key"]["required"] is False and c["AssemblyAI key"]["ok"] is False
+    assert "fix" not in c["python"]
+
+
+def test_doctor_key_is_optional(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("PODCAST_STUDIO_CREDENTIALS", str(tmp_path / "credentials"))
+    monkeypatch.setattr(st.shutil, "which", lambda x: "/bin/" + x)
+    monkeypatch.setattr(st.subprocess, "run", lambda *a, **k: type("R", (), {"stdout": "ffmpeg version 8\n"})())
+    r, c = run_doctor(capsys)
+    assert r["ok"] is True and c["ffmpeg"]["detail"] == "ffmpeg version 8"
+
+
+def test_missing_ffmpeg_error_points_to_doctor():
+    with pytest.raises(SystemExit) as e:
+        st.fail(FileNotFoundError(2, "No such file or directory", "ffprobe"))
+    assert "studio.py doctor" in str(e.value)

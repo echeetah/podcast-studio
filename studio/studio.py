@@ -6,6 +6,7 @@ JSON on stdout (logs go to stderr) so the agent can parse it. State is files in 
 (meta/sync/transcript/plan/levels) plus edits.json — the agent's edit log.
 
 Show and episode:
+  studio.py doctor                             check Python, ffmpeg, packages and the key; how to fix what is missing
   studio.py credentials                        create/check ~/.config/podcast-studio/credentials (the key is never printed)
   studio.py show-init DIR --name … --host "Name:f:mic:substring" ×2–5 [--recording remote|room|mixed]
                       [--assets DIR] [--engine assemblyai|whisper] [--language en]
@@ -28,8 +29,11 @@ Two-track build. Times in arguments are "raw" (track A timeline): seconds or mm:
   studio.py render DIR                         full episode → out/
 """
 import argparse
+import importlib.util
 import json
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -37,8 +41,15 @@ try:
     import podcast_core  # noqa: F401  (installed: pip install -e core)
 except ImportError:      # next to it in the same repository
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core" / "src"))
-from podcast_core import media, show  # noqa: E402
-from podcast_core import pipeline as P  # noqa: E402
+    import podcast_core  # noqa: F401,E402
+from podcast_core import show  # noqa: E402  (stdlib only — `doctor` works even without numpy)
+try:
+    from podcast_core import media  # noqa: E402
+    from podcast_core import pipeline as P  # noqa: E402
+    IMPORT_ERROR = None
+except ImportError as e:  # a missing dependency; `doctor` explains it, other commands refuse
+    media = P = None
+    IMPORT_ERROR = e
 
 STAGES = [("sync", "sync.json"), ("transcribe", "transcript.json"), ("plan", "plan.json"),
           ("preview", "preview"), ("render", "out")]
@@ -65,6 +76,8 @@ def log_edit(work, **e):
 
 
 def fail(e):
+    if isinstance(e, FileNotFoundError) and Path(str(e.filename or "")).name in ("ffmpeg", "ffprobe"):
+        e = f"{e.filename} not found in PATH. Run: studio.py doctor"
     sys.exit(json.dumps({"error": str(e)}, ensure_ascii=False))
 
 
@@ -73,6 +86,56 @@ def cmd_credentials(a):
     r["hint"] = ("open the file and paste your AssemblyAI key after \"=\"; no need to show it to the agent"
                  if not all(r["keys"].values()) else "keys are in place")
     out(r)
+
+
+def install_hint(what):
+    """How to install ffmpeg or the Python dependencies on this system."""
+    if what != "ffmpeg":
+        return f"{sys.executable} -m pip install -e core   (from the repository root; pulls numpy and mutagen)"
+    if sys.platform == "darwin":
+        return ("brew install ffmpeg" if shutil.which("brew")
+                else "install Homebrew (https://brew.sh), then: brew install ffmpeg")
+    if sys.platform == "win32":
+        return "winget install Gyan.FFmpeg   (then open a new terminal)"
+    for pm, cmd in (("apt-get", "sudo apt-get install -y ffmpeg"), ("dnf", "sudo dnf install -y ffmpeg"),
+                    ("pacman", "sudo pacman -S ffmpeg")):
+        if shutil.which(pm):
+            return cmd
+    return "install ffmpeg with your system's package manager"
+
+
+def cmd_doctor(a):
+    checks = []
+
+    def check(name, ok, detail="", fix=None, required=True):
+        checks.append({"name": name, "ok": bool(ok), "required": required, "detail": detail,
+                       **({"fix": fix} if not ok and fix else {})})
+
+    v = sys.version_info
+    check("python", v >= (3, 10), f"{v.major}.{v.minor}.{v.micro}", "install Python 3.10 or newer (https://python.org)")
+    for tool in ("ffmpeg", "ffprobe"):
+        path, detail = shutil.which(tool), "not found in PATH"
+        if path:
+            try:
+                detail = subprocess.run([tool, "-version"], capture_output=True, text=True,
+                                        timeout=10).stdout.split("\n", 1)[0]
+            except (OSError, subprocess.SubprocessError) as e:
+                path, detail = None, str(e)
+        check(tool, path, detail, install_hint("ffmpeg"))
+    for mod in ("numpy", "mutagen"):
+        check(f"python: {mod}", importlib.util.find_spec(mod), "", install_hint(mod))
+    check("podcast_core", IMPORT_ERROR is None,
+          podcast_core.__version__ if IMPORT_ERROR is None else str(IMPORT_ERROR), install_hint("podcast_core"))
+    c = show.cred_status()
+    key = c["keys"].get("ASSEMBLYAI_API_KEY")
+    check("AssemblyAI key", key, "set" if key else f"empty ({show.cred_path()})",
+          "studio.py credentials, then the user pastes the key into the file", required=False)
+    if c["exists"] and not c["private"]:
+        check("credentials file permissions", False, str(show.cred_path()), f"chmod 600 {show.cred_path()}",
+              required=False)
+    ok = all(x["ok"] for x in checks if x["required"])
+    out({"ok": ok, "platform": sys.platform, "checks": checks,
+         "hint": "ready" if ok else "fix the failed required checks (ask the user before installing anything)"})
 
 
 def cmd_show_init(a):
@@ -353,6 +416,7 @@ def cmd_render(a):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("doctor"); p.set_defaults(fn=cmd_doctor)
     p = sub.add_parser("credentials"); p.set_defaults(fn=cmd_credentials)
     p = sub.add_parser("show-init"); p.add_argument("dir"); p.add_argument("--name", required=True)
     p.add_argument("--host", action="append", required=True, help="Name[:m|f[:mic[:substring,…]]]")
@@ -389,7 +453,14 @@ def main():
     p.add_argument("--len", type=float, default=60); p.set_defaults(fn=cmd_render)
     p = sub.add_parser("render"); p.add_argument("work"); p.set_defaults(fn=cmd_render)
     a = ap.parse_args()
-    a.fn(a)
+    if IMPORT_ERROR is not None and a.fn not in (cmd_doctor, cmd_credentials):
+        fail(f"missing dependency: {IMPORT_ERROR}. Run: studio.py doctor")
+    try:
+        a.fn(a)
+    except FileNotFoundError as e:
+        if Path(str(e.filename or "")).name in ("ffmpeg", "ffprobe"):
+            fail(e)
+        raise
 
 
 if __name__ == "__main__":

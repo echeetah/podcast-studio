@@ -14,6 +14,13 @@ Every command prints JSON (logs go to stderr). All state lives in files in the e
 Times are seconds or `mm:ss` / `hh:mm:ss` on the timeline of track A (the reference track).
 `python studio/studio.py --help` lists all commands.
 
+## Before anything else: `doctor`
+
+At the start of every session run `studio.py doctor`. If `ok` is false, tell the user in plain words what is
+missing (e.g. "ffmpeg, the program that reads and writes audio, is not installed") and offer the `fix` command
+from the check. Install only after the user agrees. If `podcast_core` itself cannot be imported, run the
+`pip install -e core` step from the README first. Any command that fails with "Run: studio.py doctor" → do that.
+
 ## First time: the show
 
 No `show.json` yet → ask one at a time: show name, hosts (name, gender for wording, microphone),

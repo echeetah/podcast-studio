@@ -26,8 +26,12 @@ change and builds the final MP3 with chapters.
 git clone https://github.com/echeetah/podcast-studio && cd podcast-studio
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e core
+python studio/studio.py doctor          # checks Python, ffmpeg and packages; prints how to fix what is missing
 python studio/studio.py credentials     # creates ~/.config/podcast-studio/credentials (chmod 600)
 ```
+
+Or just open the folder in your agent and say *"Install this by the README"*: it runs `doctor` and offers to
+install anything missing (such as ffmpeg) after asking you.
 
 1. Open `~/.config/podcast-studio/credentials` and paste your AssemblyAI key after `ASSEMBLYAI_API_KEY=`.
    Do not paste the key into the agent chat.
