@@ -159,3 +159,19 @@ def test_analyze_trust_signal_only_when_asked(monkeypatch, tmp_path):
     st = P.analyze(tmp_path / "a.wav", tmp_path / "b.wav", max_offset=30, blind=True, trust_signal=True)
     assert st["mode"] == "signal" and st["offset"] == pytest.approx(talk["offset"] + 1.0, abs=1e-3)
     assert "agree" in st["signal"]["trust"]
+
+
+def test_denoise_filter(tmp_path):
+    base = {"denoise": True, "denoise_nr": 12, "rnnoise_model": ""}
+    assert P.denoise_filter(base) == "afftdn=nr=12:tn=1"
+    assert P.denoise_filter({**base, "denoise": False}) == ""
+    assert P.denoise_filter({**base, "denoise_nr": 0}) == ""
+    model = tmp_path / "bd.rnnn"
+    model.write_text("rnnoise-nu model file version 1\n")
+    assert P.denoise_filter({**base, "rnnoise_model": str(model)}) == f"arnndn=m={model}"
+    assert P.denoise_filter({**base, "rnnoise_model": str(model), "denoise": False}) == ""
+    weird = tmp_path / "a:b,c'd.rnnn"                       # символы, ломающие цепочку фильтров, экранируются
+    weird.write_text("x")
+    f = P.denoise_filter({**base, "rnnoise_model": str(weird)})
+    assert f.startswith("arnndn=m=") and "\\:" in f and "\\'" in f
+    assert P.denoise_filter({**base, "rnnoise_model": str(tmp_path / "missing.rnnn")}) == "afftdn=nr=12:tn=1"   # нет файла — запасной

@@ -55,6 +55,7 @@ DEFAULTS = {
     "highpass_hz": 70,
     "denoise": True,
     "denoise_nr": 12,
+    "rnnoise_model": "",       # path to an RNNoise model (.rnnn): neural denoiser (ffmpeg arnndn) instead of afftdn; "" — FFT denoiser
     "gate": True,
     "gate_range_db": -14,
     "eq": True,                # equalizer on/off
@@ -1153,6 +1154,19 @@ def to_edit(segs, t):
         pos += b - a - XF
 
 
+def denoise_filter(cfg):
+    """Per-track denoise filter (ffmpeg): RNNoise `arnndn` if cfg["rnnoise_model"] is an existing model file,
+    otherwise the FFT denoiser `afftdn` of strength cfg["denoise_nr"] dB; "" — denoise is off."""
+    if not cfg.get("denoise"):
+        return ""
+    model = cfg.get("rnnoise_model")
+    if model:
+        if Path(model).is_file():
+            return "arnndn=m=" + re.sub(r"([\\:',\[\];])", r"\\\1", str(model))
+        log(f"denoise: RNNoise model {model} not found — using afftdn")
+    return f"afftdn=nr={cfg['denoise_nr']}:tn=1" if cfg["denoise_nr"] > 0 else ""
+
+
 def render(work, cfg, progress=lambda *a, **k: None, preview=False, segments=None):
     """Build: full episode (out/) or preview (preview/, intro + first minute only).
 
@@ -1181,10 +1195,7 @@ def render(work, cfg, progress=lambda *a, **k: None, preview=False, segments=Non
     D = sum(b - a for a, b, _ in segs) - XF * (len(segs) - 1)
     progress("levels" if preview else "clean", 0.0)
     lv = measure_levels(work, cfg, S, E, (lambda f: progress("levels", f)) if preview else (lambda f: progress("clean", f * 0.3)))
-    pre = [f"highpass=f={cfg['highpass_hz']}"]
-    if cfg["denoise"] and cfg["denoise_nr"] > 0:
-        pre.append(f"afftdn=nr={cfg['denoise_nr']}:tn=1")
-    pre = ",".join(pre)
+    pre = ",".join(x for x in (f"highpass=f={cfg['highpass_hz']}", denoise_filter(cfg)) if x)
     progress("clean", 0.3 if not preview else 0.0)
     log("render: tracks" + (" (preview)" if preview else ""))
     ext = ".wv" if cfg.get("tmp_codec") == "wavpack" else ".wav"
@@ -1313,7 +1324,8 @@ def render(work, cfg, progress=lambda *a, **k: None, preview=False, segments=Non
                "sync": {k: sync[k] for k in ("mode", "offset", "drift_ms_per_hour", "confidence")},
                "b_delay": sync.get("b_delay", 0.0), "comp_ratio": cfg["comp_ratio"], "eq": cfg["eq"],
                "profiles": list(cfg.get("track_profile") or []), "deesser": cfg["deesser"],
-               "dynaudnorm": cfg["dynaudnorm"], "denoise_nr": cfg["denoise_nr"] if cfg["denoise"] else 0}
+               "dynaudnorm": cfg["dynaudnorm"], "denoise_nr": cfg["denoise_nr"] if cfg["denoise"] else 0,
+               "rnnoise": bool(cfg["denoise"] and cfg.get("rnnoise_model") and Path(cfg["rnnoise_model"]).is_file())}
         jsave(work / "preview.json", rep)
         for x in (ta, tb, main):
             x.unlink(missing_ok=True)
